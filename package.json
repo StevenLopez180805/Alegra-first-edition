@@ -1,0 +1,39 @@
+{
+  "name": "jornada-almuerzo-gratis",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Reto técnico Alegra — Jornada de Almuerzo Gratis (microservicios serverless en AWS)",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build:lambdas": "node scripts/build-lambdas.mjs",
+    "build": "pnpm typecheck && pnpm build:lambdas",
+    "seed": "tsx scripts/seed.ts",
+    "deploy": "pnpm build && sam deploy"
+  },
+  "license": "UNLICENSED",
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "12.14.0",
+      "onFail": "download"
+    }
+  },
+  "packageManager": "pnpm@12.14.0",
+  "devDependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1152.0",
+    "@aws-sdk/client-sqs": "^3.1152.0",
+    "@aws-sdk/lib-dynamodb": "^3.1152.0",
+    "@jag/persistence": "workspace:*",
+    "@jag/recipes": "workspace:*",
+    "@jag/shared": "workspace:*",
+    "@types/aws-lambda": "^8.10.164",
+    "@types/node": "^26.6.5",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  }
+}

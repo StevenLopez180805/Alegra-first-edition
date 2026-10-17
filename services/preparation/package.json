@@ -1,0 +1,15 @@
+{
+  "name": "@jag/preparation",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Preparation Service: worker SQS que asigna receta, abastece faltantes y entrega cada plato.",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@jag/inventory": "workspace:*",
+    "@jag/persistence": "workspace:*",
+    "@jag/procurement": "workspace:*",
+    "@jag/recipes": "workspace:*",
+    "@jag/shared": "workspace:*"
+  }
+}

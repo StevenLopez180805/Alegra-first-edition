@@ -1,0 +1,13 @@
+{
+  "name": "@jag/procurement",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Procurement Service: integración con la plaza de mercado, historial de compras y reposición.",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@jag/inventory": "workspace:*",
+    "@jag/persistence": "workspace:*",
+    "@jag/shared": "workspace:*"
+  }
+}

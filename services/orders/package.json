@@ -1,0 +1,12 @@
+{
+  "name": "@jag/orders",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Orders Service: crea pedidos de X platos, los encola y expone su estado e historial.",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@jag/persistence": "workspace:*",
+    "@jag/shared": "workspace:*"
+  }
+}

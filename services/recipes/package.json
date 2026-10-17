@@ -1,0 +1,12 @@
+{
+  "name": "@jag/recipes",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Recipes Service: catálogo de solo lectura con las seis recetas y selección aleatoria.",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@jag/persistence": "workspace:*",
+    "@jag/shared": "workspace:*"
+  }
+}

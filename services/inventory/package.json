@@ -1,0 +1,12 @@
+{
+  "name": "@jag/inventory",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Inventory Service: existencias, consumo atómico por ítem y reposiciones idempotentes.",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@jag/persistence": "workspace:*",
+    "@jag/shared": "workspace:*"
+  }
+}

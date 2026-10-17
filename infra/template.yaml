@@ -1,0 +1,170 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Jornada de Almuerzo Gratis — microservicios serverless (Alegra reto técnico)
+
+# El código se empaqueta antes con `pnpm build` (esbuild → dist/lambdas/<servicio>/index.mjs).
+# Despliegue: `pnpm deploy` (usa samconfig.toml en la raíz).
+
+Parameters:
+  MaxOrderItems:
+    Type: Number
+    Default: 100
+    Description: Máximo de platos por pedido.
+  MaxPreparationAttempts:
+    Type: Number
+    Default: 5
+    Description: Intentos por plato antes de marcarlo FAILED.
+  AllowedOrigin:
+    Type: String
+    Default: "*"
+    Description: Origen permitido por CORS (restringir a la URL del frontend al publicar).
+
+Globals:
+  Function:
+    Runtime: nodejs24.x
+    Architectures: [arm64]
+    MemorySize: 256
+    Timeout: 10
+    Handler: index.handler
+    LoggingConfig:
+      LogFormat: JSON
+    Environment:
+      Variables:
+        TABLE_NAME: !Ref KitchenTable
+        NODE_OPTIONS: --enable-source-maps
+
+Resources:
+  # ---------- Persistencia ----------
+  KitchenTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: PK, AttributeType: S }
+        - { AttributeName: SK, AttributeType: S }
+        - { AttributeName: GSI1PK, AttributeType: S }
+        - { AttributeName: GSI1SK, AttributeType: S }
+      KeySchema:
+        - { AttributeName: PK, KeyType: HASH }
+        - { AttributeName: SK, KeyType: RANGE }
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - { AttributeName: GSI1PK, KeyType: HASH }
+            - { AttributeName: GSI1SK, KeyType: RANGE }
+          Projection: { ProjectionType: ALL }
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: false
+
+  # ---------- Mensajería ----------
+  PreparationDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600 # 14 días
+
+  PreparationQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      VisibilityTimeout: 180 # 6 × timeout del worker
+      MessageRetentionPeriod: 345600 # 4 días
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt PreparationDLQ.Arn
+        maxReceiveCount: 7 # > MaxPreparationAttempts: el worker marca FAILED antes de ir a la DLQ
+
+  # ---------- API ----------
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowOrigins: [!Ref AllowedOrigin]
+        AllowMethods: [GET, POST, OPTIONS]
+        AllowHeaders: [content-type]
+        MaxAge: 600
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 50
+        ThrottlingRateLimit: 20
+
+  # ---------- Microservicios ----------
+  OrdersFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../dist/lambdas/orders/
+      Description: Orders Service
+      Environment:
+        Variables:
+          QUEUE_URL: !Ref PreparationQueue
+          MAX_ORDER_ITEMS: !Ref MaxOrderItems
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref KitchenTable }
+        - SQSSendMessagePolicy: { QueueName: !GetAtt PreparationQueue.QueueName }
+      Events:
+        Health: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /health } }
+        CreateOrder: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: /orders } }
+        ListOrders: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /orders } }
+        GetOrder: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /orders/{orderId} } }
+        ListPreparations: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /preparations } }
+
+  RecipesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../dist/lambdas/recipes/
+      Description: Recipes Service
+      Policies:
+        - DynamoDBReadPolicy: { TableName: !Ref KitchenTable }
+      Events:
+        ListRecipes: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /recipes } }
+
+  InventoryFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../dist/lambdas/inventory/
+      Description: Inventory Service
+      Policies:
+        - DynamoDBReadPolicy: { TableName: !Ref KitchenTable }
+      Events:
+        GetInventory: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /inventory } }
+
+  ProcurementFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../dist/lambdas/procurement/
+      Description: Procurement Service (historial de compras)
+      Policies:
+        - DynamoDBReadPolicy: { TableName: !Ref KitchenTable }
+      Events:
+        ListPurchases: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /purchases } }
+
+  PreparationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../dist/lambdas/preparation/
+      Description: Preparation Service (worker SQS)
+      Timeout: 30
+      Environment:
+        Variables:
+          MAX_PREPARATION_ATTEMPTS: !Ref MaxPreparationAttempts
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref KitchenTable }
+      Events:
+        PreparationJobs:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt PreparationQueue.Arn
+            BatchSize: 1
+            FunctionResponseTypes: [ReportBatchItemFailures]
+            ScalingConfig:
+              MaximumConcurrency: 2
+
+Outputs:
+  ApiUrl:
+    Description: URL base de la API pública
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}
+  TableName:
+    Description: Tabla DynamoDB (usar con `pnpm seed`)
+    Value: !Ref KitchenTable
+  PreparationQueueUrl:
+    Value: !Ref PreparationQueue
+  PreparationDLQUrl:
+    Value: !Ref PreparationDLQ

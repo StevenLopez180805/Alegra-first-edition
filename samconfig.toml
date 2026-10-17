@@ -1,0 +1,9 @@
+version = 0.1
+
+[default.deploy.parameters]
+template_file = "infra/template.yaml"
+stack_name = "jag"
+region = "us-east-1"
+resolve_s3 = true
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = true
