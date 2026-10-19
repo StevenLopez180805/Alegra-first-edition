@@ -103,7 +103,7 @@ Resources:
         Health: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /health } }
         CreateOrder: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: /orders } }
         ListOrders: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /orders } }
-        GetOrder: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /orders/{orderId} } }
+        GetOrder: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/orders/{orderId}" } }
         ListPreparations: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /preparations } }
 
   RecipesFunction:

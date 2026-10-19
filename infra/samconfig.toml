@@ -1,0 +1,14 @@
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "jornada-almuerzo-gratis"
+resolve_s3 = true
+s3_prefix = "jornada-almuerzo-gratis"
+region = "us-east-1"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = "MaxOrderItems=\"100\" MaxPreparationAttempts=\"5\" AllowedOrigin=\"*\""
+image_repositories = []
+
+[default.global.parameters]
+region = "us-east-1"

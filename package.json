@@ -11,7 +11,7 @@
     "build:lambdas": "node scripts/build-lambdas.mjs",
     "build": "pnpm typecheck && pnpm build:lambdas",
     "seed": "tsx scripts/seed.ts",
-    "deploy": "pnpm build && sam deploy"
+    "deploy": "pnpm build && sam deploy --template-file infra/template.yaml"
   },
   "license": "UNLICENSED",
   "devEngines": {
