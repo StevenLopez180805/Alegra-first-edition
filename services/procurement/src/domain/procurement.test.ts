@@ -1,5 +1,6 @@
+import type { PurchaseAttempt } from "@jag/shared";
 import { describe, expect, it, vi } from "vitest";
-import { buyFromMarket, parseMarketResponse } from "./market-client";
+import { buyFromMarket, parseMarketResponse, type MarketResult } from "./market-client";
 import { procureIngredient } from "./procure";
 
 describe("parseMarketResponse", () => {
@@ -40,29 +41,57 @@ describe("buyFromMarket", () => {
 describe("procureIngredient", () => {
   const base = { now: () => "2026-10-18T00:00:00.000Z", newId: () => "p-1" };
 
-  it("repone solo la cantidad confirmada", async () => {
-    const restock = vi.fn(async () => true);
-    const savePurchase = vi.fn(async () => {});
-    const purchase = await procureIngredient("cheese", "item-1", {
-      ...base,
-      buy: async () => ({ kind: "sold", quantitySold: 4 }),
-      savePurchase,
-      restock,
+  /** Registra el orden de las llamadas para verificar que el intento se guarda antes de comprar. */
+  function recorder(result: MarketResult) {
+    const calls: string[] = [];
+    const savePurchase = vi.fn(async (purchase: PurchaseAttempt) => {
+      calls.push(`save:${purchase.status}`);
     });
-    expect(purchase.status).toBe("SOLD");
-    expect(savePurchase).toHaveBeenCalledOnce();
-    expect(restock).toHaveBeenCalledWith("cheese", 4, "p-1");
+    const completePurchase = vi.fn(async (purchase: PurchaseAttempt) => {
+      calls.push(`complete:${purchase.status}`);
+      return true;
+    });
+    const buy = vi.fn(async () => {
+      calls.push("buy");
+      return result;
+    });
+    return { calls, savePurchase, completePurchase, buy };
+  }
+
+  it("registra el intento como REQUESTED antes de llamar al mercado", async () => {
+    const deps = recorder({ kind: "sold", quantitySold: 4 });
+    await procureIngredient("cheese", "item-1", { ...base, ...deps });
+    expect(deps.calls).toEqual(["save:REQUESTED", "buy", "complete:SOLD"]);
+    expect(deps.savePurchase).toHaveBeenCalledWith(
+      expect.objectContaining({ purchaseId: "p-1", status: "REQUESTED", quantitySold: 0 }),
+    );
   });
 
-  it("no repone cuando el mercado devuelve 0", async () => {
-    const restock = vi.fn(async () => true);
-    const purchase = await procureIngredient("cheese", "item-1", {
-      ...base,
-      buy: async () => ({ kind: "unavailable" }),
-      savePurchase: async () => {},
-      restock,
-    });
+  it("cierra la compra con la cantidad confirmada (la reposición va en el cierre)", async () => {
+    const deps = recorder({ kind: "sold", quantitySold: 4 });
+    const purchase = await procureIngredient("cheese", "item-1", { ...base, ...deps });
+    expect(purchase).toMatchObject({ purchaseId: "p-1", status: "SOLD", quantitySold: 4, completedAt: base.now() });
+    expect(deps.completePurchase).toHaveBeenCalledWith(purchase);
+  });
+
+  it("cierra con 0 unidades cuando el mercado no tiene disponibilidad", async () => {
+    const deps = recorder({ kind: "unavailable" });
+    const purchase = await procureIngredient("cheese", "item-1", { ...base, ...deps });
     expect(purchase).toMatchObject({ status: "UNAVAILABLE", quantitySold: 0 });
-    expect(restock).not.toHaveBeenCalled();
+    expect(purchase.error).toBeUndefined();
+  });
+
+  it("cierra como ERROR con el motivo, sin inventar ventas", async () => {
+    const deps = recorder({ kind: "error", error: "Timeout tras 5000 ms" });
+    const purchase = await procureIngredient("cheese", "item-1", { ...base, ...deps });
+    expect(purchase).toMatchObject({ status: "ERROR", quantitySold: 0, error: "Timeout tras 5000 ms" });
+  });
+
+  it("deja el intento en REQUESTED si la compra se interrumpe", async () => {
+    const deps = recorder({ kind: "sold", quantitySold: 1 });
+    deps.buy.mockRejectedValueOnce(new Error("Lambda interrumpida"));
+    await expect(procureIngredient("cheese", "item-1", { ...base, ...deps })).rejects.toThrow("Lambda interrumpida");
+    expect(deps.calls).toEqual(["save:REQUESTED"]);
+    expect(deps.completePurchase).not.toHaveBeenCalled();
   });
 });

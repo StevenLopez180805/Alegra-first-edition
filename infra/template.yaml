@@ -67,7 +67,7 @@ Resources:
   PreparationQueue:
     Type: AWS::SQS::Queue
     Properties:
-      VisibilityTimeout: 180 # 6 × timeout del worker
+      VisibilityTimeout: 180 # 6 × timeout del worker; los reintentos usan backoff propio (ChangeMessageVisibility)
       MessageRetentionPeriod: 345600 # 4 días
       RedrivePolicy:
         deadLetterTargetArn: !GetAtt PreparationDLQ.Arn
@@ -105,6 +105,27 @@ Resources:
         ListOrders: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /orders } }
         GetOrder: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/orders/{orderId}" } }
         ListPreparations: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /preparations } }
+
+  # Barrido del outbox de encolado (PRE-04): reencola platos PENDING de pedidos que no se terminaron de encolar.
+  ReconcileOrdersFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../dist/lambdas/orders-reconcile/
+      Description: Orders Service (reconciliación de pedidos no encolados)
+      Timeout: 60
+      Environment:
+        Variables:
+          QUEUE_URL: !Ref PreparationQueue
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref KitchenTable }
+        - SQSSendMessagePolicy: { QueueName: !GetAtt PreparationQueue.QueueName }
+      Events:
+        Sweep:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: rate(5 minutes)
+            RetryPolicy:
+              MaximumRetryAttempts: 0
 
   RecipesFunction:
     Type: AWS::Serverless::Function
@@ -145,8 +166,14 @@ Resources:
       Environment:
         Variables:
           MAX_PREPARATION_ATTEMPTS: !Ref MaxPreparationAttempts
+          QUEUE_URL: !Ref PreparationQueue
       Policies:
         - DynamoDBCrudPolicy: { TableName: !Ref KitchenTable }
+        # Backoff de reintentos (BUY-02): el evento SQS solo concede recibir/borrar mensajes.
+        - Statement:
+            - Effect: Allow
+              Action: sqs:ChangeMessageVisibility
+              Resource: !GetAtt PreparationQueue.Arn
       Events:
         PreparationJobs:
           Type: SQS

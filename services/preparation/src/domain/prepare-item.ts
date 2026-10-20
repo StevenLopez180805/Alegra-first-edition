@@ -26,8 +26,7 @@ export interface PreparationDeps {
 }
 
 /**
- * Algoritmo por ítem (PLANNING.md §5). Idempotente: un mensaje repetido sobre un
- * ítem ya entregado no tiene efectos secundarios.
+ * Algoritmo por ítem
  */
 export async function prepareItem(orderId: string, itemId: string, deps: PreparationDeps): Promise<PrepareOutcome> {
   const log = deps.log.child({ orderId, itemId });

@@ -1,4 +1,4 @@
-import { BatchWriteCommand, QueryCommand, type BatchWriteCommandInput } from "@aws-sdk/lib-dynamodb";
+import { BatchWriteCommand, DeleteCommand, QueryCommand, type BatchWriteCommandInput } from "@aws-sdk/lib-dynamodb";
 import { GSI1, getDocumentClient, keys, stripKeys, tableName } from "@jag/persistence";
 import {
   ACTIVE_ITEM_STATUSES,
@@ -31,12 +31,62 @@ export function orderItemRecord(item: OrderItem) {
   return { ...keys.orderItem(item.orderId, item.itemId), ...keys.orderItemGsi(item.status, item.createdAt), ...item };
 }
 
-/** Persiste pedido + ítems antes de encolar (si el encolado falla, quedan PENDING recuperables). */
+export interface OutboxEntry {
+  orderId: string;
+  createdAt: string;
+}
+
+/**
+ * Persiste pedido + ítems antes de encolar
+ */
 export async function saveOrder(order: Order, items: OrderItem[]): Promise<void> {
+  const outbox: OutboxEntry = { orderId: order.orderId, createdAt: order.createdAt };
   await batchWrite([
+    { PutRequest: { Item: { ...keys.outbox(order.createdAt, order.orderId), ...outbox } } },
     { PutRequest: { Item: { ...keys.order(order.orderId), ...keys.orderGsi(order.createdAt, order.orderId), ...order } } },
     ...items.map((item) => ({ PutRequest: { Item: orderItemRecord(item) } })),
   ]);
+}
+
+/** Se llama cuando todos los platos del pedido quedaron encolados. */
+export async function clearOutbox(entry: OutboxEntry): Promise<void> {
+  await getDocumentClient().send(
+    new DeleteCommand({ TableName: tableName(), Key: keys.outbox(entry.createdAt, entry.orderId) }),
+  );
+}
+
+/** Pedidos cuyo encolado no se confirmó y que son anteriores a `olderThan` (más antiguos primero). */
+export async function listStaleOutbox(olderThan: string, limit: number): Promise<OutboxEntry[]> {
+  const result = await getDocumentClient().send(
+    new QueryCommand({
+      TableName: tableName(),
+      KeyConditionExpression: "PK = :pk AND SK < :before",
+      ExpressionAttributeValues: { ":pk": "OUTBOX", ":before": olderThan },
+      Limit: limit,
+    }),
+  );
+  return (result.Items ?? []).map((record) => ({ orderId: String(record.orderId), createdAt: String(record.createdAt) }));
+}
+
+/** Platos del pedido que siguen en PENDING (nunca tomados por el worker). */
+export async function listPendingItems(orderId: string): Promise<OrderItem[]> {
+  const items: OrderItem[] = [];
+  let startKey: Record<string, unknown> | undefined;
+  do {
+    const result = await getDocumentClient().send(
+      new QueryCommand({
+        TableName: tableName(),
+        KeyConditionExpression: "PK = :pk AND begins_with(SK, :item)",
+        FilterExpression: "#status = :pending",
+        ExpressionAttributeNames: { "#status": "status" },
+        ExpressionAttributeValues: { ":pk": keys.order(orderId).PK, ":item": "ITEM#", ":pending": "PENDING" },
+        ExclusiveStartKey: startKey,
+      }),
+    );
+    items.push(...(result.Items ?? []).map((record) => stripKeys<OrderItem>(record)));
+    startKey = result.LastEvaluatedKey;
+  } while (startKey);
+  return items;
 }
 
 export async function listOrders(limit: number): Promise<OrderSummary[]> {

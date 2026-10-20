@@ -1,12 +1,12 @@
 import { createLogger, createRouter, HttpError, json, parseJsonBody, parseLimit, parseQuantity } from "@jag/shared";
 import { buildOrder } from "./domain/create-order";
 import { enqueuePreparations } from "./queue";
-import { getOrderWithItems, listActiveItems, listOrders, saveOrder } from "./repository";
+import { clearOutbox, getOrderWithItems, listActiveItems, listOrders, saveOrder } from "./repository";
 
 const log = createLogger("orders");
 
 export const handler = createRouter({
-  "GET /health": async () => json(200, { status: "ok", service: "orders", timestamp: new Date().toISOString() }),
+  "GET /health": async () => json(200, { status: "ok", service: "orders", timestamp: new Date().toISOString() }), // Esto es basicamente para probar que el servicio si este arriba
 
   "POST /orders": async (event) => {
     const quantity = parseQuantity(parseJsonBody(event));
@@ -15,8 +15,10 @@ export const handler = createRouter({
     await saveOrder(order, items);
     const notQueued = await enqueuePreparations(messages);
     if (notQueued.length > 0) {
-      // TODO(PRE-04): reconciliar ítems PENDING no encolados (barrido programado u outbox).
-      log.error("Ítems sin encolar", { orderId: order.orderId, itemIds: notQueued });
+      // El outbox se conserva: el barrido de reconciliación reencolará los platos que sigan PENDING.
+      log.warn("Ítems sin encolar; se reintentarán en la reconciliación", { orderId: order.orderId, itemIds: notQueued });
+    } else {
+      await clearOutbox({ orderId: order.orderId, createdAt: order.createdAt });
     }
     log.info("Pedido creado", { orderId: order.orderId, quantity });
 

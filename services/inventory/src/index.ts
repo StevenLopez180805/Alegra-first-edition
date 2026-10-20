@@ -2,6 +2,7 @@
 export { computeShortages, type StockSnapshot } from "./domain/shortages";
 export {
   buildConsumptionTransactItems,
+  buildRestockTransactItems,
   getStock,
   getStockSnapshot,
   isAlreadyConsumed,

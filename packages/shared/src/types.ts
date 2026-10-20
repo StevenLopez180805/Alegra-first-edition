@@ -47,7 +47,11 @@ export interface OrderItem {
   lastError?: string;
 }
 
-export type PurchaseStatus = "SOLD" | "UNAVAILABLE" | "ERROR";
+/**
+ * REQUESTED: el intento se registró antes de llamar al mercado y aún no tiene resultado. Si se queda así,
+ * la Lambda murió a mitad de la compra y el resultado es incierto (el mercado no es idempotente).
+ */
+export type PurchaseStatus = "REQUESTED" | "SOLD" | "UNAVAILABLE" | "ERROR";
 
 export interface PurchaseAttempt {
   purchaseId: string;
@@ -56,6 +60,7 @@ export interface PurchaseAttempt {
   quantitySold: number;
   status: PurchaseStatus;
   createdAt: string;
+  completedAt?: string;
   error?: string;
 }
 

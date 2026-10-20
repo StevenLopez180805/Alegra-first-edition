@@ -2,7 +2,6 @@ import type { ItemStatus } from "@jag/shared";
 
 /**
  * Diseño single-table. Cada dominio escribe solo sus propios prefijos de clave
- * (ver PLANNING.md §2: tabla compartida como compromiso de infraestructura).
  */
 export const GSI1 = "GSI1";
 
@@ -32,6 +31,12 @@ export const keys = {
   consumption: (itemId: string) => ({ PK: `CONSUMPTION#${itemId}`, SK: "META" }),
   /** Marcador de reposición: evita aplicar dos veces la misma compra (invariante 5). */
   restock: (purchaseId: string) => ({ PK: `RESTOCK#${purchaseId}`, SK: "META" }),
+
+  /**
+   * Outbox de encolado, esto existe mientras los platos de un pedido no se hayan encolado todos.
+   * Ordenado por fecha para que el barrido consulte solo los vencidos.
+   */
+  outbox: (createdAt: string, orderId: string) => ({ PK: "OUTBOX", SK: `${createdAt}#${orderId}` }),
 } as const;
 
 const KEY_ATTRIBUTES = new Set(["PK", "SK", "GSI1PK", "GSI1SK"]);

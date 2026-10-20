@@ -7,7 +7,7 @@ export interface NewOrder {
   messages: PrepareOrderItemMessage[];
 }
 
-/** Construye el pedido y sus `quantity` ítems en PENDING. La receta la asigna el worker (PRE-02). */
+/** Construye el pedido y sus `quantity` ítems en PENDING. La receta la asigna el worker */
 export function buildOrder(
   quantity: number,
   now: string = new Date().toISOString(),

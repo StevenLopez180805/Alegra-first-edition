@@ -1,16 +1,24 @@
-// Empaqueta cada handler en dist/lambdas/<servicio>/index.mjs para que SAM lo despliegue tal cual.
+// Empaqueta cada handler en dist/lambdas/<lambda>/index.mjs para que SAM lo despliegue tal cual.
 import { rm } from "node:fs/promises";
 import { build } from "esbuild";
 
-const SERVICES = ["orders", "recipes", "inventory", "preparation", "procurement"];
+/** Nombre de la carpeta de salida → entrada del handler. */
+const LAMBDAS = {
+  orders: "services/orders/src/handler.ts",
+  "orders-reconcile": "services/orders/src/reconcile-handler.ts",
+  recipes: "services/recipes/src/handler.ts",
+  inventory: "services/inventory/src/handler.ts",
+  preparation: "services/preparation/src/handler.ts",
+  procurement: "services/procurement/src/handler.ts",
+};
 
 await rm("dist/lambdas", { recursive: true, force: true });
 
 await Promise.all(
-  SERVICES.map((service) =>
+  Object.entries(LAMBDAS).map(([name, entry]) =>
     build({
-      entryPoints: [`services/${service}/src/handler.ts`],
-      outfile: `dist/lambdas/${service}/index.mjs`,
+      entryPoints: [entry],
+      outfile: `dist/lambdas/${name}/index.mjs`,
       bundle: true,
       platform: "node",
       target: "node24",
@@ -26,4 +34,4 @@ await Promise.all(
   ),
 );
 
-console.log(`Lambdas empaquetadas: ${SERVICES.join(", ")}`);
+console.log(`Lambdas empaquetadas: ${Object.keys(LAMBDAS).join(", ")}`);

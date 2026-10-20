@@ -43,11 +43,7 @@ function movementPut(movement: StockMovement): TransactItem {
 }
 
 /**
- * Operaciones transaccionales para consumir los ingredientes de un ítem.
- * El worker de preparación las combina con el cambio de estado a DELIVERED en un
- * único TransactWriteItems (INV-02): o se aplica todo o nada.
- *  - `stock >= :q` impide saldos negativos (invariante 2).
- *  - El marcador CONSUMPTION#<itemId> impide un segundo descuento (invariantes 3 y 4).
+ * Aqui hago las operaciones transaccionales para consumir los ingredientes de un ítem.
  */
 export function buildConsumptionTransactItems(itemId: string, recipe: Recipe, now = nowIso()): TransactItem[] {
   const ingredientUpdates: TransactItem[] = recipe.ingredients.map(({ name, quantity }) => ({
@@ -83,43 +79,54 @@ export function buildConsumptionTransactItems(itemId: string, recipe: Recipe, no
 }
 
 /**
- * Suma unidades confirmadas por el mercado. Idempotente por `purchaseId` (invariante 5):
- * devuelve false si esa compra ya se había aplicado.
+ * Operaciones transaccionales para reponer unidades confirmadas por el mercado. Procurement las combina
+ * con el cierre de la compra en un único TransactWriteItems (BUY-02). El marcador
+ * RESTOCK#<purchaseId> (primera operación) impide aplicar dos veces la misma compra.
  */
-export async function restock(ingredient: IngredientName, quantity: number, purchaseId: string): Promise<boolean> {
+export function buildRestockTransactItems(
+  ingredient: IngredientName,
+  quantity: number,
+  purchaseId: string,
+  now = nowIso(),
+): TransactItem[] {
   if (!Number.isInteger(quantity) || quantity <= 0) {
     throw new Error(`Cantidad de reposición inválida: ${quantity}`);
   }
-  const now = nowIso();
+  return [
+    {
+      Put: {
+        TableName: tableName(),
+        Item: { ...keys.restock(purchaseId), purchaseId, ingredient, quantity, createdAt: now },
+        ConditionExpression: "attribute_not_exists(PK)",
+      },
+    },
+    {
+      Update: {
+        TableName: tableName(),
+        Key: keys.ingredient(ingredient),
+        UpdateExpression: "ADD stock :q SET updatedAt = :now",
+        ExpressionAttributeValues: { ":q": quantity, ":now": now },
+      },
+    },
+    movementPut({
+      movementId: `PURCHASE#${purchaseId}`,
+      purchaseId,
+      ingredient,
+      delta: quantity,
+      reason: "PURCHASE",
+      createdAt: now,
+    }),
+  ];
+}
+
+/**
+ * Suma unidades confirmadas por el mercado. Esto es idempotente por `purchaseId`:
+ * devuelve false si esa compra ya se había aplicado.
+ */
+export async function restock(ingredient: IngredientName, quantity: number, purchaseId: string): Promise<boolean> {
   try {
     await getDocumentClient().send(
-      new TransactWriteCommand({
-        TransactItems: [
-          {
-            Put: {
-              TableName: tableName(),
-              Item: { ...keys.restock(purchaseId), purchaseId, ingredient, quantity, createdAt: now },
-              ConditionExpression: "attribute_not_exists(PK)",
-            },
-          },
-          {
-            Update: {
-              TableName: tableName(),
-              Key: keys.ingredient(ingredient),
-              UpdateExpression: "ADD stock :q SET updatedAt = :now",
-              ExpressionAttributeValues: { ":q": quantity, ":now": now },
-            },
-          },
-          movementPut({
-            movementId: `PURCHASE#${purchaseId}`,
-            purchaseId,
-            ingredient,
-            delta: quantity,
-            reason: "PURCHASE",
-            createdAt: now,
-          }),
-        ],
-      }),
+      new TransactWriteCommand({ TransactItems: buildRestockTransactItems(ingredient, quantity, purchaseId) }),
     );
     return true;
   } catch (error) {

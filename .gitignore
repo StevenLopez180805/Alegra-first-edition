@@ -7,3 +7,4 @@ coverage/
 .env.*
 CLAUDE.md
 !.env.example
+docs/

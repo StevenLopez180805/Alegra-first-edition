@@ -53,6 +53,8 @@ export const ORDER_STATUS_META: Record<OrderStatus, StatusMeta> = {
 };
 
 export const PURCHASE_STATUS_META: Record<PurchaseStatus, StatusMeta> = {
+  // Intento registrado sin resultado: en curso o, si persiste, interrumpido con resultado incierto.
+  REQUESTED: { label: "Sin confirmar", tone: "neutral" },
   SOLD: { label: "Vendido", tone: "success" },
   UNAVAILABLE: { label: "Sin disponibilidad", tone: "warning" },
   ERROR: { label: "Error", tone: "danger" },

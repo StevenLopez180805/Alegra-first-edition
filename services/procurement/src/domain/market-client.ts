@@ -10,7 +10,7 @@ export type MarketResult =
 
 /**
  * Interpreta la respuesta del mercado. Solo un entero positivo cuenta como venta;
- * cualquier otra cosa es error y nunca se inventa una cantidad.
+ * cualquier otra cosa es error
  */
 export function parseMarketResponse(body: unknown): MarketResult {
   const quantitySold = (body as { quantitySold?: unknown } | null)?.quantitySold;
@@ -27,9 +27,7 @@ export interface MarketClientOptions {
 }
 
 /**
- * Una sola llamada al mercado, con timeout. Ojo: si hay timeout la compra pudo
- * ejecutarse sin que conozcamos el resultado (sin idempotencia en el mercado);
- * se registra como error y no se suma stock. Ver PLANNING.md §5.
+ * Una sola llamada al mercado, con timeout
  */
 export async function buyFromMarket(ingredient: IngredientName, options: MarketClientOptions = {}): Promise<MarketResult> {
   const {

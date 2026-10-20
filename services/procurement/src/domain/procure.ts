@@ -10,35 +10,43 @@ const STATUS_BY_RESULT: Record<MarketResult["kind"], PurchaseStatus> = {
 
 export interface ProcureDeps {
   buy: (ingredient: IngredientName) => Promise<MarketResult>;
+  /** Registra el intento en estado REQUESTED, antes de llamar al mercado. */
   savePurchase: (purchase: PurchaseAttempt) => Promise<void>;
-  restock: (ingredient: IngredientName, quantity: number, purchaseId: string) => Promise<boolean>;
+  /**
+   * Cierra el intento con su resultado. Si es SOLD, la reposición de stock va en la misma
+   * transacción. Devuelve false si el intento ya estaba cerrado.
+   */
+  completePurchase: (purchase: PurchaseAttempt) => Promise<boolean>;
   now?: () => string;
   newId?: () => string;
 }
 
 /**
- * Compra un ingrediente para un ítem: registra el intento y repone solo lo
- * confirmado por `quantitySold`. Devuelve el intento registrado.
+ * Compra un ingrediente para un ítem. El intento se registra antes de llamar al mercado, así
+ * queda rastro aunque la Lambda muera a mitad de la compra (queda en REQUESTED: resultado
+ * incierto). Solo se repone lo confirmado por `quantitySold`. Devuelve el intento ya cerrado.
  */
 export async function procureIngredient(ingredient: IngredientName, itemId: string, deps: ProcureDeps): Promise<PurchaseAttempt> {
   const { now = () => new Date().toISOString(), newId = randomUUID } = deps;
-  const result = await deps.buy(ingredient);
 
-  const purchase: PurchaseAttempt = {
+  const requested: PurchaseAttempt = {
     purchaseId: newId(),
     itemId,
     ingredient,
+    quantitySold: 0,
+    status: "REQUESTED",
+    createdAt: now(),
+  };
+  await deps.savePurchase(requested);
+
+  const result = await deps.buy(ingredient);
+  const completed: PurchaseAttempt = {
+    ...requested,
     quantitySold: result.kind === "sold" ? result.quantitySold : 0,
     status: STATUS_BY_RESULT[result.kind],
-    createdAt: now(),
+    completedAt: now(),
     ...(result.kind === "error" ? { error: result.error } : {}),
   };
-
-  // TODO(BUY-02): registrar el intento antes de llamar al mercado para no perder trazabilidad
-  // si la Lambda muere entre la respuesta y la escritura.
-  await deps.savePurchase(purchase);
-  if (purchase.status === "SOLD") {
-    await deps.restock(ingredient, purchase.quantitySold, purchase.purchaseId);
-  }
-  return purchase;
+  await deps.completePurchase(completed);
+  return completed;
 }

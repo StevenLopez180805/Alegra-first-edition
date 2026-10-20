@@ -1,38 +1,4 @@
-# PLANNING — Jornada de Almuerzo Gratis
-
-**Reto técnico:** Alegra — Backend Developer (Node.js)  
-**Periodo de ejecución:** viernes 16 a jueves 22 de octubre de 2026 (zona horaria: America/Bogota)  
-**Tiempo presupuestado:** 27 horas de trabajo efectivo  
-**Estado al crear este documento:** planificación aprobada; desarrollo sin iniciar  
-**Repositorio:** privado; URL por completar  
-**URL pública:** por completar  
-
-> Este documento presenta el plan previo al desarrollo. Las estimaciones, decisiones, riesgos y criterios de aceptación se revisarán con evidencia durante la implementación. No implica que los componentes o pruebas ya estén terminados.
-
-## 1. Objetivo y alcance
-
-Crear una aplicación web accesible públicamente para que un gerente solicite **X platos** de una jornada de comida gratuita y visualice su procesamiento. La solución debe asignar recetas aleatorias de **seis recetas**, verificar ingredientes, comprar automáticamente los faltantes mediante la API de mercado provista y entregar cada plato únicamente cuando cuente con todos sus ingredientes. Se prioriza una solución backend robusta y fácil de operar.
-
-### Requisitos obligatorios
-
-- Backend en **Node.js + TypeScript**, sin Express, NestJS ni otros frameworks backend prohibidos.
-- Arquitectura de **microservicios**, implementada mediante funciones AWS Lambda y límites funcionales definidos.
-- Seis recetas precargadas; cada una usa al menos un ingrediente permitido: `tomato`, `lemon`, `potato`, `rice`, `ketchup`, `lettuce`, `onion`, `cheese`, `meat`, `chicken`.
-- Existencia inicial de **cinco unidades de cada ingrediente** en un despliegue nuevo.
-- Compras mediante `https://recruitment.alegra.com/api/farmers-market/buy` con el parámetro `ingredient`; respuesta `quantitySold` entera positiva indica venta, `0` indica no disponibilidad. No se presupone que la API entregue exactamente la cantidad solicitada.
-- Descontar ingredientes al preparar, nunca entregar sin ingredientes suficientes; registrar los pedidos, sus estados, el inventario y las compras.
-- Dashboard React: botón para pedir X platos; órdenes en preparación, inventario, historial de compras, historial de pedidos y recetas con ingredientes.
-- Persistencia entre reinicios; soportar múltiples pedidos concurrentes sin corrupción de datos.
-- Publicar URL funcional; repositorio privado de GitHub con `scouting@alegra.com` como colaborador.
-- Documentar planificación antes de implementar, arquitectura y funcionamiento. Entregar por el formulario indicado en el correo inicial.
-
-### Fuera de alcance (para proteger el plazo)
-
-- CRUD administrativo de recetas, inventario y usuarios; las recetas y el inventario base se cargan mediante un *seed* controlado e idempotente.
-- Autenticación de usuarios, pagos, imágenes de platos, sistema de mesas, analítica avanzada, WebSockets y Kubernetes.
-- IA integrada como objetivo obligatorio: se mantiene como **P2** y solo se implementará si el flujo completo, las pruebas esenciales y el despliegue están terminados. De implementarse, debe funcionar en producción y documentarse.
-
-## 2. Decisiones técnicas y justificación (ADR inicial)
+## Que usare para cada apartado y por que
 
 | Decisión | Opción | Motivo / compromiso |
 |---|---|---|
@@ -44,10 +10,10 @@ Crear una aplicación web accesible públicamente para que un gerente solicite *
 | Persistencia | Amazon DynamoDB, capacidad on-demand | Evitar gestión de servidores y conexiones SQL. |
 | Integridad | `ConditionExpression` + `TransactWriteItems` | Consumo condicional y estados idempotentes, sin inventario negativo. |
 | Frontend | React + Vite + TypeScript | Dashboard de una página, rápido de desarrollar. |
-| Hospedaje frontend | S3 público mediante hosting estático **solo si** su configuración y costo son aceptables; alternativa: AWS Amplify Hosting si está disponible en el plan | Elegir y registrar URL definitiva durante el despliegue. S3 por sí solo no proporciona HTTPS en el endpoint de sitio web; para un frontend HTTPS usar Amplify o S3 + CloudFront según disponibilidad y presupuesto. |
+| Hospedaje frontend | Este aun lo estoy evaluando, pero de momento mi mejor opcion es AWS Amplify Hosting | Elegir y registrar URL definitiva durante el despliegue. S3 por sí solo no proporciona HTTPS en el endpoint de sitio web; para un frontend HTTPS usar Amplify o S3 + CloudFront según disponibilidad y presupuesto. |
 | Pruebas | Vitest; mocks de mercado; pruebas integradas contra entorno de AWS | Desarrollo ágil y escenarios deterministas. |
 | Observabilidad | CloudWatch Logs y métricas mínimas; logs con `orderId`/`itemId` | Depuración y operación reproducibles. |
-| Bonus IA | Postergado (P2) | No comprometer alcance y estabilidad. |
+| Funcionalidades con IA | Postergado | Solo la implementare si hay tiempo suficiente despues de probar el funcionamiento del flujo principal. |
 
 **Límite de arquitectura:** cinco microservicios lógicos (Orders, Recipes, Inventory, Preparation, Procurement), cada uno con handler Lambda y código de dominio aislado en monorepo. Para el plazo se propone **una tabla DynamoDB compartida con claves y permisos separados por dominio** como compromiso de infraestructura; esto **no** representa aislamiento total de datos por microservicio. Si se exige aislamiento físico estricto, pasar a tablas separadas antes de codificar (mayor complejidad). El orquestador de preparación se comunica con adaptadores de dominio explícitos; no se deben hacer dependencias circulares ni escritura directa no autorizada entre módulos.
 
@@ -59,34 +25,11 @@ Crear una aplicación web accesible públicamente para que un gerente solicite *
 4. **Preparation Service:** recibe mensajes SQS por plato, selecciona/recupera receta, solicita abastecimiento cuando haga falta, cambia estados y finaliza la preparación. Define políticas de reintento, idempotencia y recuperación.
 5. **Procurement Service:** encapsula integración con mercado, valida `quantitySold`, registra intentos y resultados, y repone existencias confirmadas. Maneja `0`, fallos de red, timeout y respuestas inválidas.
 
-## 3. Diagrama de arquitectura
-
-```mermaid
-flowchart TB
-    UI[React + Vite\nDashboard del gerente] --> API[API Gateway HTTP API]
-    API --> ORD[Orders Lambda]
-    API --> REC[Recipes Lambda]
-    API --> INV[Inventory Lambda]
-    API --> BUY[Procurement Lambda: historial]
-    ORD --> SQS[SQS Standard\ncola de platos]
-    SQS --> PRE[Preparation Lambda\nworker / orquestador]
-    PRE --> RECD[Adaptador Recipes]
-    PRE --> INVD[Adaptador Inventory]
-    PRE --> BUYD[Adaptador Procurement]
-    BUYD --> MARKET[Farmers Market API]
-    ORD --> DB[(DynamoDB)]
-    REC --> DB
-    INV --> DB
-    BUY --> DB
-    PRE --> DB
-    SQS -. mensajes fallidos .-> DLQ[SQS Dead Letter Queue]
-```
-
-**Comunicación:** HTTP para operaciones públicas; evento `PrepareOrderItem` para procesamiento interno; comunicación a través de contratos de dominio explícitos en el worker. Los adaptadores pueden compartir código de librerías del monorepo para evitar invocaciones Lambda→Lambda innecesarias; los límites de responsabilidad deben reflejarse en permisos, módulos y pruebas. Documentar esta compensación (servicios lógicos frente a microservicios desplegados de forma independiente).
-
 ### Estructura propuesta del repositorio
 
-```text
+Al ser un monorepo la estructura de carpetas que voy a seguir va a ser la siguiente:
+
+```
 /
 ├── PLANNING.md
 ├── README.md
@@ -96,7 +39,7 @@ flowchart TB
 │   ├── DECISIONS.md
 │   └── TESTING.md
 ├── apps/
-│   └── web/                  # React + Vite
+│   └── web/                 # Aqui va a ir mi front
 ├── services/
 │   ├── orders/
 │   ├── recipes/
@@ -104,19 +47,17 @@ flowchart TB
 │   ├── preparation/
 │   └── procurement/
 ├── packages/
-│   ├── shared/               # Tipos, validaciones y utilidades
-│   └── persistence/          # Acceso a DynamoDB y operaciones atómicas
+│   ├── shared/               # Utilidades para el proyecto
+│   └── persistence/          # Aqui va el acceso a DynamoDB y las operaciones atómicas
 ├── infra/
-│   └── template.yaml         # AWS SAM
+│   └── template.yaml         # Aqui configuro AWS SAM para desplegar
 ├── tests/
 │   ├── integration/
 │   └── load/
 └── package.json
 ```
 
-## 4. Contratos de datos y API (propuesta inicial)
-
-### Entidades de dominio mínimas
+### Entidades que manejare
 
 | Entidad | Datos mínimos |
 |---|---|
@@ -127,9 +68,8 @@ flowchart TB
 | PurchaseAttempt | `purchaseId`, `itemId`, `ingredient`, `quantitySold`, `status`, `createdAt`, `error?` |
 | StockMovement | `movementId`, `itemId?`, `ingredient`, `delta`, `reason`, `createdAt` |
 
-**Índices y claves tentativas:** claves de acceso por tipo de registro (`PK`,`SK`), índices según consultas por estado y fecha; evitar scans para vistas de alta frecuencia. Fijar claves definitivas durante el diseño del sábado. Los registros deben vincularse a `orderId`/`itemId` para permitir auditoría e idempotencia.
 
-### Endpoints públicos mínimos
+### Endpoints que manejare
 
 | Verbo | Ruta | Respuesta / propósito |
 |---|---|---|
@@ -154,24 +94,14 @@ Estados mínimos por ítem: `PENDING`, `PREPARING`, `WAITING_INGREDIENTS`, `DELI
 5. Los eventos de compra confirmados solo incrementan inventario una vez (idempotencia por `purchaseId`).
 6. No perder pedidos por reinicios; si falla el envío a SQS luego de persistir el pedido, contemplar recuperación controlada (reconciliación de pendientes o patrón outbox) y documentar el mecanismo implementado.
 
-### Algoritmo previsto por ítem
+### Reparticion de tiempos
 
-1. Leer registro de ítem; si ya está `DELIVERED`, terminar sin efectos secundarios.
-2. Recuperar la receta asignada; si no existe, seleccionar aleatoriamente entre seis y persistirla **solo si aún no existe**.
-3. Consultar ingredientes requeridos; intentar una **transacción DynamoDB** para consumir todos los ingredientes necesarios y cambiar ítem a `DELIVERED` en una misma operación, con precondiciones de stock y de estado. Crear movimientos/auditoría dentro de los límites transaccionales cuando sea viable.
-4. Si falta stock, determinar faltantes y solicitar compras de los ingredientes necesarios sin mantener transacciones abiertas. Dado que `quantitySold` no garantiza satisfacer el faltante, actualizar inventario solo con cantidades enteras positivas confirmadas.
-5. Reintentar el consumo transaccional. Si mercado devuelve `0` o error recuperable, marcar `WAITING_INGREDIENTS`, reprogramar con backoff controlado y límite de reintentos; nunca bloquear una invocación Lambda esperando durante minutos.
-6. Si el caso no puede resolverse automáticamente dentro de la política, registrar `FAILED` y la causa para trazabilidad; no afirmar que la entrega fue exitosa.
+Lo mas importante es saber de cuanto tiempo dispongo para invertir en el proyecto, asi que primero voy a hacer un estimado
 
-**Advertencia de integración externa:** el enunciado no declara una clave de idempotencia para el endpoint del mercado. Una petición que caduca tras llegar al mercado puede haber ejecutado una compra sin respuesta confiable. No se puede garantizar *exactly-once* en esa frontera externa; registrar intentos, usar timeouts y reintentos limitados, y documentar explícitamente el riesgo residual de compras repetidas. No inventar una cantidad vendida.
+**Capacidad estimada según disponibilidad:** viernes 2 h; sábado 5,5 h; domingo 10 h de trabajo efectivo (con descansos); lunes 3,5 h; martes 2 h; miércoles 2 h; jueves 2 h. **Total 27 h.** Aqui tengo que revisar cada noche el tiempo real y la mayoria del proyecto deberia quedar el domingo.
 
-**SQS:** recepción *at-least-once*; configurar timeout de Lambda y visibility timeout compatibles, `batchSize=1` inicialmente para simplificar recuperación, DLQ con `maxReceiveCount` definido, y límites de concurrencia pequeños al comenzar. Para lotes mayores, evaluar `ReportBatchItemFailures`.
 
-**Alta demanda:** el endpoint de creación no debe esperar la preparación de platos. Acotar `quantity` por solicitud y pruebas escalonadas (10, 50 y 100 ítems); la escalabilidad se evalúa por integridad, throughput y latencia observable, no por afirmaciones no probadas.
-
-## 6. Cronograma detallado y dependencias
-
-**Capacidad estimada según disponibilidad:** viernes 2 h; sábado 5,5 h; domingo 10 h de trabajo efectivo (con descansos); lunes 3,5 h; martes 2 h; miércoles 2 h; jueves 2 h. **Total 27 h.** Revisar cada noche el tiempo real; el domingo de 10 horas es el supuesto más exigente.
+Ahora, voy a sacar las tareas "unitarias" y las voy a dividir a lo largo de los días para saber como deberia ir avanzando el proyecto para que este funcionando totalmente el dia de la entrega, para esto me apoye en IAs para que me ayudaran a distribuir el tiempo a la vez de decirme tareas que pase por alto.
 
 ### Viernes 16 — Arquitectura y primera Lambda (2 h)
 
@@ -255,10 +185,6 @@ Estados mínimos por ítem: `PENDING`, `PREPARING`, `WAITING_INGREDIENTS`, `DELI
 
 **Hito D7:** entrega confirmada mediante el formulario del correo inicial, idealmente antes del cierre del día. Horario exacto del formulario: **pendiente de confirmar**.
 
-### Regla diaria de control
-
-Al cerrar cada jornada: registrar tiempo planeado/real, tareas completas, pruebas ejecutadas, principales riesgos y bloqueo siguiente. Si un hito crítico se atrasa más de una hora, recortar primero pulido visual, luego tests secundarios, y finalmente mejoras P1 no críticas; **nunca** recortar integridad del inventario, persistencia, flujo automatizado o URL pública.
-
 ## 7. Backlog priorizado y criterios de terminación
 
 **P0 — imprescindible**
@@ -281,11 +207,7 @@ Al cerrar cada jornada: registrar tiempo planeado/real, tareas completas, prueba
 - [ ] Paginación/acotación de consultas, logs y controles de costos.
 - [ ] Mejoras de usabilidad y diseño responsivo.
 
-**P2 — opcional**
-
-- [ ] IA que explique riesgos de desabastecimiento usando datos reales; documentar modelo, coste, límites y resultados; integrar solo si todos los P0/P1 críticos están completos.
-
-**Definition of Done de cada tarea:** código integrado en rama principal, build correcto, validación probada, error manejado, logs mínimos y cambio documentado cuando afecte contratos o arquitectura. No marcar un requisito como completado solo por generar código mediante IA.
+Tambien voy a definir de una vez pruebas para hacer tan pronto el codigo este terminado en su totalidad, esto con el fin de ver que no se me haya escapado ningun caso.
 
 ## 8. Plan de pruebas y aceptación
 
@@ -306,43 +228,7 @@ Al cerrar cada jornada: registrar tiempo planeado/real, tareas completas, prueba
 | T13 | Dos POST concurrentes | Se registran ambos pedidos; solicitud repetida bajo clave idempotente no duplica | P1 |
 | T14 | Verificar costos y permisos | Presupuesto activo; ninguna credencial en repositorio o frontend | P0 |
 
-**Evidencia:** guardar comandos, capturas pertinentes, resultados, tiempos de pruebas de carga y limitaciones conocidas en `docs/TESTING.md`. No atribuir throughput sin medición real.
-
-## 9. Matriz de riesgos
-
-| Riesgo | Prob. | Impacto | Respuesta / gatillo |
-|---|---|---|---|
-| Inexperiencia con AWS Serverless | Alta | Alto | Despliegue mínimo el viernes; resolver IAM/SAM antes del sábado. |
-| AWS plan gratuito limita algún servicio | Media | Alto | Validar disponibilidad en cuenta y región antes de crear recursos; ajustar hosting sin abandonar AWS innecesariamente. |
-| Créditos consumidos/cargos | Media | Alto | Revisar créditos/plan; presupuesto con alerta; limitar concurrencia, logs y volumen de pruebas; evitar NAT Gateway y recursos caros. |
-| Domingo con 10 h demasiado exigente | Alta | Alto | Pausas, tickets pequeños y congelar alcance. Si capacidad real es menor, adelantar tareas el sábado o reducir P1. |
-| Stock concurrente se vuelve negativo | Media | Muy alto | Transacciones/condiciones DynamoDB y tests de concurrencia antes del frontend. |
-| SQS duplica o reintenta eventos | Alta | Alto | Idempotencia persistida por `itemId`; DLQ; batch pequeño. |
-| POST persiste pedido pero no se encola | Media | Alto | Recuperación de `PENDING` mediante reconciliación/outbox documentada; pruebas de fallo entre pasos. |
-| Timeout de compra con resultado incierto | Media | Alto | Historial de intentos, reintentos acotados y documentación del límite de exactly-once externo. |
-| API de mercado no disponible | Media | Alto | Pruebas unitarias con mock; estados de espera; no falsificar éxito en producción. |
-| Frontend HTTP/HTTPS o CORS falla | Media | Alto | Probar publicación HTTPS y CORS desde el martes como máximo, idealmente el domingo. |
-| Retraso de documentación o formulario | Media | Alto | PLANNING temprano, README incremental, entrega jueves con reserva. |
-
-## 10. Costos, seguridad y operación AWS
-
-- Confirmar **plan de cuenta y créditos vigentes en consola**; la elegibilidad y disponibilidad de servicios depende de la cuenta. Los créditos no garantizan costo cero en todos los escenarios.
-- Configurar AWS Budgets / alertas y revisar consumo diariamente. Las alertas no sustituyen un límite rígido universal de gasto.
-- Usar una región única, políticas IAM de mínimo privilegio por Lambda y nombres de recursos con prefijo del reto.
-- No incluir secretos, AWS keys ni tokens en Git. Usar variables de entorno/configuración apropiada; la URL del mercado no requiere credenciales inventadas.
-- Limitar concurrencia del worker y `MAX_ORDER_ITEMS`; logs estructurados evitando almacenar datos sensibles innecesarios.
-- DynamoDB on-demand con operaciones condicionales; registrar el consumo aproximado durante pruebas de carga.
-- Documentar ruta de despliegue (`sam build`, `sam deploy`) y limpieza eventual de recursos **después** de la evaluación; no destruir la aplicación antes de que pueda revisarse.
-
-## 11. Colaboración con asistentes de IA durante el desarrollo
-
-Herramientas: VS Code, Claude y Codex. Usarlas para acelerar implementación, tests, documentación y revisión, pero validar manualmente cada cambio.
-
-- Ticket pequeño por módulo con entradas, salidas, errores y aceptación verificable.
-- No pedir cambios simultáneos sobre los mismos archivos.
-- Revisar diffs antes de commit, ejecutar tests, revisar dependencias y recursos de AWS.
-- Mantener `docs/DECISIONS.md` actualizado con motivos de cambios y trade-offs.
-- No presentar como implementado, probado o medido algo que solo ha sido propuesto por un agente.
+Por ultimo, esto es lo que debe estar listo para el día de entrega.
 
 ## 12. Entregables y checklist de envío
 
@@ -354,14 +240,3 @@ Herramientas: VS Code, Claude y Codex. Usarlas para acelerar implementación, te
 - [ ] Pruebas mínimas P0 ejecutadas y limitaciones explícitas.
 - [ ] Confirmar fecha/hora exacta límite en correo de convocatoria.
 - [ ] Enviar **exclusivamente por el formulario del correo inicial** y conservar confirmación.
-
-## 13. Referencias técnicas
-
-- Enunciado adjunto: *Reto técnico — Jornada de Almuerzo Gratis* (Alegra, cuatro páginas).
-- AWS Lambda + SQS: https://docs.aws.amazon.com/lambda/latest/dg/with-sqs.html
-- Respuestas parciales SQS: https://docs.aws.amazon.com/lambda/latest/dg/services-sqs-errorhandling.html
-- AWS Free Tier y créditos: https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/free-tier.html
-
----
-
-**Criterio final de éxito:** un evaluador ajeno al proyecto puede abrir una URL pública, solicitar múltiples platos y observar su preparación, la compra automática cuando faltan ingredientes, el inventario y los historiales; el sistema mantiene integridad de datos con solicitudes concurrentes y fallas recuperables, y el repositorio explica su diseño y sus limitaciones.
