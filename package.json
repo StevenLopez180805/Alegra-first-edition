@@ -11,7 +11,10 @@
     "build:lambdas": "node scripts/build-lambdas.mjs",
     "build": "pnpm typecheck && pnpm build:lambdas",
     "seed": "tsx scripts/seed.ts",
-    "deploy": "pnpm build && sam deploy --template-file infra/template.yaml"
+    "deploy": "pnpm build && sam deploy --template-file infra/template.yaml",
+    "dev:web": "pnpm --filter @jag/web dev",
+    "build:web": "pnpm --filter @jag/web build",
+    "test:web": "pnpm --filter @jag/web test"
   },
   "license": "UNLICENSED",
   "devEngines": {

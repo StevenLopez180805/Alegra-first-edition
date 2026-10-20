@@ -42,7 +42,6 @@ export async function buyFromMarket(ingredient: IngredientName, options: MarketC
   url.searchParams.set("ingredient", ingredient);
 
   try {
-    // TODO(BUY-01): confirmar método HTTP esperado por el mercado contra el entorno real.
     const response = await fetchImpl(url, { method: "GET", signal: AbortSignal.timeout(timeoutMs) });
     if (!response.ok) return { kind: "error", error: `HTTP ${response.status} del mercado` };
     return parseMarketResponse(await response.json());

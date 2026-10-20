@@ -1,0 +1,25 @@
+# AWS Amplify Hosting — build del dashboard (monorepo pnpm, app en apps/web).
+# En la consola de Amplify definir las variables de entorno:
+#   AMPLIFY_MONOREPO_APP_ROOT = apps/web
+#   VITE_API_URL              = <output ApiUrl de sam deploy>
+version: 1
+applications:
+  - appRoot: apps/web
+    frontend:
+      phases:
+        preBuild:
+          commands:
+            - nvm install 24
+            - nvm use 24
+            - npm install -g pnpm@12.14.0
+            - pnpm install --frozen-lockfile
+        build:
+          commands:
+            - pnpm run build
+      artifacts:
+        baseDirectory: dist
+        files:
+          - "**/*"
+      cache:
+        paths:
+          - node_modules/**/*
